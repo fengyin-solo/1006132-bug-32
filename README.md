@@ -68,4 +68,8 @@ npm run build
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
+- 管片出厂判定全系统只有一份：`frontend/src/data/segment-release.ts`。口径以交付清单为准
+  （检验人员签字 + 养护天数、出厂强度落在上下限内才算待出厂），上下限配置也集中在这一处；
+  生产台账、导出、进度节点交付清单、试验检测委托清单都从同一份实现取数。
+  历史已出厂的管片按当时标准留档（出厂依据），不用新口径翻案；已出厂的管片不许再改钢筋笼批号。
 - 想回到初始数据：清掉浏览器里 `shield-tunnel-construction:entries` 这一项，或调用 `resetModule(模块)`。

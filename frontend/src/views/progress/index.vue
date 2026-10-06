@@ -67,6 +67,41 @@
       <span>共 {{ total }} 条进度节点记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <section class="panel-gap" data-module="segmentprod-delivery">
+      <h3 class="panel-title">管片交付清单</h3>
+      <p class="status-legend">
+        <span class="legend-item">待出厂管片：{{ deliveryReady }} 台</span>
+        <span class="legend-item">口径：与生产台账、导出同一份出厂算法</span>
+      </p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>管片编号</th>
+            <th>生产日期</th>
+            <th>养护天数</th>
+            <th>出厂强度</th>
+            <th>检验人员</th>
+            <th>出厂结论</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in delivery" :key="String(item.id)">
+            <td>{{ item['管片编号'] }}</td>
+            <td>{{ item['生产日期'] ?? '—' }}</td>
+            <td>{{ item['养护天数'] }}</td>
+            <td>{{ item['出厂强度'] }}</td>
+            <td>{{ item['检验人员'] || '—' }}</td>
+            <td>{{ item['出厂结论'] }}</td>
+            <td>{{ item['说明'] || '—' }}</td>
+          </tr>
+          <tr v-if="!delivery.length">
+            <td colspan="7" class="empty-state">暂无管片生产数据</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </section>
 </template>
 
@@ -76,7 +111,9 @@ import { computed, onMounted, ref } from 'vue'
 import {
   downloadEntries,
   listEntries,
+  listSegmentDelivery,
   moduleMeta,
+  recalculateSegmentRelease,
   runAction as applyAction,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
@@ -92,6 +129,9 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+// 交付清单与生产台账共用同一份取数，台数跟着出厂口径一起变
+const delivery = ref<EntryRow[]>([])
+const deliveryReady = ref(0)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -133,5 +173,16 @@ function reload() {
   }
 }
 
-onMounted(reload)
+function reloadDelivery() {
+  const payload = listSegmentDelivery()
+  delivery.value = payload.items
+  deliveryReady.value = payload.ready
+}
+
+// 进页面先按统一口径复查存量管片（幂等），再取交付清单，不沿用旧值
+onMounted(() => {
+  recalculateSegmentRelease()
+  reload()
+  reloadDelivery()
+})
 </script>

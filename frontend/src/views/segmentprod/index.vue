@@ -7,6 +7,7 @@
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记管片</button>
+        <button class="btn" type="button" @click="recalculate">按出厂标准重算</button>
         <button class="btn" type="button" @click="exportRows">导出管片生产清单</button>
       </div>
     </header>
@@ -55,6 +56,7 @@
             >
               {{ action }}
             </button>
+            <button class="link" type="button" @click="editBatch(row)">改批号</button>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -65,6 +67,7 @@
 
     <footer class="page-foot">
       <span>共 {{ total }} 条管片生产记录</span>
+      <span v-if="noticeMessage">{{ noticeMessage }}</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -76,28 +79,46 @@ import { computed, onMounted, ref } from 'vue'
 import {
   downloadEntries,
   listEntries,
+  loadSegmentReleaseStats,
   moduleMeta,
+  recalculateSegmentRelease,
   runAction as applyAction,
+  updateEntryField,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('segmentprod')
-const columns = ["管片编号", "管片型号", "生产模具", "钢筋笼批号", "养护天数", "出厂强度", "检验人员", "生产状态"]
+const columns = ["管片编号", "管片型号", "生产模具", "钢筋笼批号", "生产日期", "养护天数", "出厂强度", "检验人员", "出厂依据", "生产状态"]
 const actions = ["开始浇筑", "确认养护", "办理出厂"]
 const statuses = ["待浇筑", "养护中", "待出厂", "已出厂"]
-const stats = [{"label": "养护中管片", "value": 0}, {"label": "待出厂管片", "value": 0}, {"label": "本月出厂数", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
+const noticeMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+// 统计与交付清单、试验检测同一份取数，几处台数才压得住。
+const stats = ref([
+  { label: '养护中管片', value: 0 },
+  { label: '待出厂管片', value: 0 },
+  { label: '本月出厂数', value: 0 },
+])
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+function refreshStats() {
+  const summary = loadSegmentReleaseStats()
+  stats.value = [
+    { label: '养护中管片', value: summary.curing },
+    { label: '待出厂管片', value: summary.ready },
+    { label: '本月出厂数', value: summary.releasedThisMonth },
+  ]
+}
 
 function resetFilters() {
   filters.value = {}
@@ -112,13 +133,44 @@ function openCreate() {
   errorMessage.value = '管片登记入口尚未接入审批流'
 }
 
+function recalculate() {
+  errorMessage.value = ''
+  noticeMessage.value = ''
+  const result = recalculateSegmentRelease()
+  if (!result.ok) {
+    errorMessage.value = result.message
+    return
+  }
+  noticeMessage.value = result.message
+  reload()
+}
+
+function editBatch(row: EntryRow) {
+  errorMessage.value = ''
+  noticeMessage.value = ''
+  const value = window.prompt(`修改 ${String(row['管片编号'])} 的钢筋笼批号`, String(row['钢筋笼批号'] ?? ''))
+  if (value === null) {
+    return
+  }
+  const result = updateEntryField(meta.key, Number(row.id), '钢筋笼批号', value.trim())
+  if (!result.ok) {
+    errorMessage.value = result.message
+    return
+  }
+  noticeMessage.value = result.message
+  reload()
+}
+
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
+  noticeMessage.value = ''
   const result = applyAction(meta.key, Number(row.id), action)
   if (!result.ok) {
     errorMessage.value = result.message
     return
   }
+  noticeMessage.value = result.message
+  // 提交完重新取数复查，不沿用旧值
   reload()
 }
 
@@ -128,10 +180,15 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    refreshStats()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '管片生产列表读取失败'
   }
 }
 
-onMounted(reload)
+// 进页面先把存量管片按统一口径过一遍（幂等），再读最新结果
+onMounted(() => {
+  recalculateSegmentRelease()
+  reload()
+})
 </script>

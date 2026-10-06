@@ -40,12 +40,31 @@ export function listRows(key: string): EntryRow[] {
   return allRows()[key] ?? []
 }
 
-export function saveRows(key: string, rows: EntryRow[]): void {
-  const next = { ...allRows(), [key]: rows }
-  cache = next
-  if (typeof window !== 'undefined' && window.localStorage) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+// 落库：写失败时重试一次，仍失败就抛给调用方；缓存保持旧值，不沿用写了一半的状态。
+function persist(state: Record<string, EntryRow[]>): void {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return
   }
+  const payload = JSON.stringify(state)
+  try {
+    window.localStorage.setItem(STORAGE_KEY, payload)
+  } catch {
+    window.localStorage.setItem(STORAGE_KEY, payload)
+  }
+}
+
+/**
+ * 一次提交多个模块的改动：先整体落库，落库成功才换缓存。
+ * 任何一个键写不进去都会抛错，缓存不动，等于一并回滚。
+ */
+export function saveModules(patch: Record<string, EntryRow[]>): void {
+  const next = { ...allRows(), ...patch }
+  persist(next)
+  cache = next
+}
+
+export function saveRows(key: string, rows: EntryRow[]): void {
+  saveModules({ [key]: rows })
 }
 
 export function resetRows(key: string): EntryRow[] {
