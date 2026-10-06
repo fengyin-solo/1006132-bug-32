@@ -69,3 +69,17 @@ npm run build
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
 - 想回到初始数据：清掉浏览器里 `shield-tunnel-construction:entries` 这一项，或调用 `resetModule(模块)`。
+
+## 管片出厂判定（全系统统一口径）
+
+- 出厂判定只有一份实现：`frontend/src/domain/segment-release.ts`。生产台账、清单导出、
+  进度节点的交付清单、试验检测的委托清单都从 `local-service.ts` 的 `releaseStateOf /
+  summarizeRelease` 取结论，页面不再各自算。
+- 口径以交付清单为准：检验人员已签字，且养护天数、出厂强度落在上下限之内才算已出厂；
+  上下限集中在 `segment-release.ts` 的 `RELEASE_LIMITS`，改口径只改这一份。
+- 口径变更后存量重算：`recalculateSegmentRelease()` 按生产日期把存量管片重新过一遍，
+  历史已出厂的按当时标准留档（`shield-tunnel-construction:segment-release-archive`，
+  每台只落一条），结论回写试验检测委托清单（`TEST-RELEASE`，幂等更新）。三步在一个
+  事务里，任何一步落库失败就整体回滚。口径标识变化时页面加载会自动重算一次，也可在
+  管片生产页点「按交付清单口径重算」手动执行。
+- 已出厂的管片不允许再改钢筋笼批号，`updateSegmentRebarBatch` 会直接挡回越权提交。

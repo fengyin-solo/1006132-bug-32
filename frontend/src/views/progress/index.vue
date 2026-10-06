@@ -67,6 +67,42 @@
       <span>共 {{ total }} 条进度节点记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <section class="delivery-panel">
+      <header class="delivery-head">
+        <h3>管片交付清单</h3>
+        <span class="delivery-summary">
+          待出厂 {{ deliverySummary.pendingRelease }} 台 · 已出厂 {{ deliverySummary.released }} 台（与生产台账同一份取数）
+        </span>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>管片编号</th>
+            <th>生产日期</th>
+            <th>养护天数</th>
+            <th>出厂强度</th>
+            <th>检验人员</th>
+            <th>出厂判定</th>
+            <th>判定说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in deliveryRows" :key="String(row.id)">
+            <td>{{ row['管片编号'] }}</td>
+            <td>{{ row['生产日期'] || '—' }}</td>
+            <td>{{ row['养护天数'] }}</td>
+            <td>{{ row['出厂强度'] }}</td>
+            <td>{{ row['检验人员'] || '—' }}</td>
+            <td>{{ row['出厂判定'] }}</td>
+            <td>{{ row['判定说明'] }}</td>
+          </tr>
+          <tr v-if="!deliveryRows.length">
+            <td colspan="7" class="empty-state">暂无管片生产数据</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </section>
 </template>
 
@@ -75,9 +111,13 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   downloadEntries,
+  ensureReleaseStandard,
   listEntries,
+  listSegmentDelivery,
   moduleMeta,
   runAction as applyAction,
+  summarizeRelease,
+  type DeliveryRow,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
@@ -92,6 +132,9 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+// 交付清单与生产台账共用同一份取数，台账那边重算后这里随之更新。
+const deliveryRows = ref<DeliveryRow[]>([])
+const deliverySummary = ref({ pendingRelease: 0, released: 0 })
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -128,10 +171,20 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    deliveryRows.value = listSegmentDelivery()
+    deliverySummary.value = summarizeRelease()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '进度节点列表读取失败'
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  // 口径有变化时先重算存量（幂等），保证交付清单与台账口径一致。
+  try {
+    ensureReleaseStandard()
+  } catch {
+    errorMessage.value = '出厂口径重算落库失败，已回滚，请到管片生产页重试'
+  }
+  reload()
+})
 </script>

@@ -48,6 +48,18 @@ export function saveRows(key: string, rows: EntryRow[]): void {
   }
 }
 
+// 事务用：动手前先拍一份快照，写失败时整体放回去，不留半截数据。
+export function snapshotRows(): Record<string, EntryRow[]> {
+  return clone(allRows())
+}
+
+export function replaceAllRows(rows: Record<string, EntryRow[]>): void {
+  cache = clone(rows)
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cache))
+  }
+}
+
 export function resetRows(key: string): EntryRow[] {
   const rows = clone(SEED_ROWS[key] ?? [])
   saveRows(key, rows)

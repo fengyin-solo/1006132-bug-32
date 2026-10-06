@@ -75,9 +75,11 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   downloadEntries,
+  ensureReleaseStandard,
   listEntries,
   moduleMeta,
   runAction as applyAction,
+  summarizeRelease,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
@@ -85,13 +87,22 @@ const meta = moduleMeta('testing')
 const columns = ["委托编号", "试样类型", "检测项目", "送样日期", "检测结果", "报告编号", "检测机构", "委托状态"]
 const actions = ["送样委托", "出具报告", "登记不合格"]
 const statuses = ["待送样", "检测中", "已出报告", "不合格"]
-const stats = [{"label": "待送样委托", "value": 0}, {"label": "检测中委托", "value": 0}, {"label": "不合格项", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
+// 「待出厂管片」与管片生产页出自同一个 summarizeRelease，两处算出来的数必然对得上。
+const stats = computed(() => {
+  const summary = summarizeRelease()
+  return [
+    { label: '待送样委托', value: rows.value.filter((row) => String(row.status) === '待送样').length },
+    { label: '检测中委托', value: rows.value.filter((row) => String(row.status) === '检测中').length },
+    { label: '待出厂管片', value: summary.pendingRelease },
+  ]
+})
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -133,5 +144,13 @@ function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  // 口径有变化时先重算存量（幂等），重算结论会回写到本页的委托清单里。
+  try {
+    ensureReleaseStandard()
+  } catch {
+    errorMessage.value = '出厂口径重算落库失败，已回滚，请到管片生产页重试'
+  }
+  reload()
+})
 </script>
